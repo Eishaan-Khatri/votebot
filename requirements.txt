@@ -1,0 +1,5 @@
+google-cloud-firestore
+google-auth
+httpx
+python-dotenv
+google-generativeai

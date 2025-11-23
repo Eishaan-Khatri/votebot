@@ -1,0 +1,54 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+.env/
+
+# VS Code settings
+.vscode/
+*.code-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Prefect cache / flows
+.prefect/
+
+# Firebase credentials
+serviceAccountKey.json
+*.pem
+
+# Environment variables
+.env
+*.env
+
+# Byte-compiled
+*.so
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# PyInstaller
+*.spec
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Secrets
+secret.json

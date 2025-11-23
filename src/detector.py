@@ -262,8 +262,8 @@ def process_candidate(
     doc_id = f"{network}-{pid}"
     ref = db.collection("proposals").document(doc_id)
     transaction = db.transaction()
-with transaction:
-    action = ensure_scheduled_transaction(transaction, ref, now, network, pid)
+    with transaction:
+        action = ensure_scheduled_transaction(transaction, ref, now, network, pid)
     if action == "skip":
         return dispatch_count, None
 
