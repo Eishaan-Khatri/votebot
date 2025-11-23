@@ -1,0 +1,37 @@
+name: Run Detector
+
+on:
+  schedule:
+    - cron: "0 0 * * *"  # Every 24 hours
+  workflow_dispatch:
+
+jobs:
+  run-detector:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write  # Allow triggering scraper workflow
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      
+      - name: Install deps
+        run: pip install -r requirements.txt
+      
+      - name: Run detector
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp.json
+          DETECTOR_NETWORKS: "polkadot,kusama,paseo"
+          DETECTOR_FRESH_HOURS: "24"
+          DETECTOR_MAX_DISPATCH: "30"
+          SCRAPER_WORKFLOW: "scraper.yml"
+          SCRAPER_REPO: ${{ github.repository }}
+        run: |
+          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}" > gcp.json
+          python src/detector.py
