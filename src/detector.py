@@ -31,7 +31,7 @@ MAX_DISPATCH_PER_RUN = int(os.getenv("DETECTOR_MAX_DISPATCH", "30"))
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # must be set in GitHub Actions
 SCRAPER_WORKFLOW = os.getenv("SCRAPER_WORKFLOW", "scraper.yml")
-SCRAPER_REPO = os.getenv("SCRAPER_REPO", "OWNER/REPO")  # e.g. "eishaan-khatri/cybergov"
+SCRAPER_REPO = os.getenv("SCRAPER_REPO", "OWNER/REPO")  # e.g. "eishaan-khatri/votebot"
 
 SCRAPER_DISPATCH_URL = (
     f"https://api.github.com/repos/{SCRAPER_REPO}/actions/workflows/{SCRAPER_WORKFLOW}/dispatches"

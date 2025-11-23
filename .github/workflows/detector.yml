@@ -33,5 +33,5 @@ jobs:
           SCRAPER_WORKFLOW: "scraper.yml"
           SCRAPER_REPO: ${{ github.repository }}
         run: |
-          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}" > gcp.json
+          printf '%s' "${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}" > gcp.json
           python src/detector.py
