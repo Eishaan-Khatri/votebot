@@ -1,0 +1,43 @@
+name: Proposal Scraper
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: 'Network name'
+        required: true
+        type: string
+      proposal_id:
+        description: 'Proposal ID'
+        required: true
+        type: string
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scraper
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/gcp.json
+          FIREBASE_CREDENTIALS_JSON: ${{ secrets.FIREBASE_CREDENTIALS_JSON }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+        run: |
+          echo "${{ secrets.FIREBASE_CREDENTIALS_JSON }}" > gcp.json
+          python src/votebot_data_scraper.py \
+            ${{ inputs.network }} \
+            ${{ inputs.proposal_id }}
