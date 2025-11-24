@@ -52,4 +52,4 @@ temp/
 
 # Secrets
 secret.json
-*.json
+gcp.json
