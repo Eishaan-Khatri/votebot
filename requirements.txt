@@ -4,3 +4,6 @@ httpx
 python-dotenv
 google-generativeai
 requests
+fastapi
+uvicorn
+dspy

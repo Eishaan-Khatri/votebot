@@ -53,3 +53,4 @@ temp/
 # Secrets
 secret.json
 gcp.json
+workspace/
