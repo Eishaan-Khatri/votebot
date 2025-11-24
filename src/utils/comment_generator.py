@@ -1,164 +1,184 @@
+# src/utils/comment_generator.py
 
-"""
-Comment Generator for CyberGov
-Generates concise 1-2 line comments for Polkassembly from vote data using Gemini.
-"""
-
-from typing import Dict, Any, List
+import json
 import os
 import logging
+from typing import Dict, List, Any
+
 import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
-def _call_gemini_for_summary(prompt: str) -> str:
-    """
-    Call Gemini API to generate summary.
-    
-    Args:
-        prompt: Prompt for Gemini
-    
-    Returns:
-        Generated summary text
-    """
-    # Prioritize GEMINI_API_KEY as per user instruction, fallback to OPENROUTER if that's what they have set
+
+# -------------------------------------------------------------
+# 1. Extract agent reasons from Firestore proposal doc
+# -------------------------------------------------------------
+def extract_agent_reasons(proposal_data):
+    outputs = proposal_data.get("files", {}).get("outputs", {})
+
+    cleaned = {}
+
+    for agent in ["balthazar", "melchior", "caspar"]:
+        try:
+            node = outputs.get(agent, {})
+            content = node.get("content")
+
+            if not content:
+                cleaned[agent] = []
+                continue
+
+            # JSON-parse if needed
+            if isinstance(content, str):
+                content = json.loads(content)
+
+            rationale = content.get("rationale", "")
+
+            # --- FORCE ALWAYS LIST OF STRINGS ---
+            if isinstance(rationale, list):
+                cleaned[agent] = [str(x) for x in rationale]
+
+            elif isinstance(rationale, str):
+                cleaned[agent] = [rationale]
+
+            else:
+                cleaned[agent] = []
+
+        except Exception as e:
+            logger.error(f"Bad rationale for {agent}: {e}")
+            cleaned[agent] = []
+
+    return cleaned
+
+
+# -------------------------------------------------------------
+# 2. Gemini API wrapper
+# -------------------------------------------------------------
+def _call_gemini(prompt: str) -> str:
     api_key = os.getenv("GEMINI_API_KEY") or os.getenv("OPENROUTER_API_KEY")
-    
     if not api_key:
-        raise ValueError("GEMINI_API_KEY (or OPENROUTER_API_KEY) not found in environment")
-    
+        raise ValueError("Missing GEMINI_API_KEY or OPENROUTER_API_KEY")
+
     try:
         genai.configure(api_key=api_key)
-        # Using the model specified by user, or fallback to standard
-        model_name = "gemini-2.0-flash-exp" 
-        model = genai.GenerativeModel(model_name)
+        model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(prompt)
-        return response.text
+        return (response.text or "").strip()
+
     except Exception as e:
-        logger.error(f"Gemini API call failed: {e}")
+        logger.error(f"Gemini API error: {e}")
         raise
 
-def generate_comment(vote_data: Dict[str, Any], agent_reasons: Dict[str, list]) -> str:
+
+# -------------------------------------------------------------
+# 3A. Short comment
+# -------------------------------------------------------------
+def _generate_comment_short(final_decision: str, agent_reasons: Dict[str, List[str]]) -> str:
     """
-    Generate a concise 1-2 line comment from vote data using Gemini to summarize agent rationales.
-    
-    Args:
-        vote_data: Parsed vote.json content (or dict representation of WeightedDecisionResult)
-        agent_reasons: Agent rationales from extract_agent_reasons()
-    
-    Returns:
-        Short comment string (1-2 lines)
+    Generates a clean 1–2 sentence human-readable rationale using Gemini.
+    Does NOT mention strategy. Synthesizes all agents.
     """
-    
-    final_decision = vote_data.get("final_decision", "Abstain")
-    metadata = vote_data.get("weighted_decision_metadata", {})
-    strategy = metadata.get("strategy_used", "neutral")
-    
-    # Get agent rationales
-    balthazar_rationale = agent_reasons.get("balthazar", [""])[0][:500]  # Limit to 500 chars
-    melchior_rationale = agent_reasons.get("melchior", [""])[0][:500]
-    caspar_rationale = agent_reasons.get("caspar", [""])[0][:500]
-    
-    # Create prompt for Gemini
-    prompt = f"""You are summarizing a governance vote analysis. Create a concise 1-2 sentence summary for a public comment.
+    b = (agent_reasons.get("balthazar", [""])[0])[:500]
+    m = (agent_reasons.get("melchior", [""])[0])[:500]
+    c = (agent_reasons.get("caspar", [""])[0])[:500]
+
+    prompt = f"""
+You are writing a short governance explanation.
 
 Decision: {final_decision}
-Strategy: {strategy}
 
-Agent Analysis:
-- Balthazar (Strategic): {balthazar_rationale}
-- Melchior (Growth): {melchior_rationale}
-- Caspar (Risk): {caspar_rationale}
+Rationales:
+- {b}
+- {m}
+- {c}
 
-Write a professional 1-2 sentence summary explaining the vote decision and key reasoning. Start with "CyberGov Bot voted {final_decision.upper()}". Keep it under 150 characters if possible."""
+Write 1–2 sentences.
+Start with: "CyberGov Bot voted {final_decision.upper()} because ..."
+Do NOT mention agents by name.
+Do NOT mention weights or templates.
+Length target: 80–140 characters.
+"""
 
     try:
-        # Call Gemini API
-        summary = _call_gemini_for_summary(prompt)
-        
-        # Clean up the response
-        summary = summary.strip()
-        
-        # Ensure it starts correctly
-        if not summary.startswith("CyberGov"):
-            summary = f"CyberGov Bot voted {final_decision.upper()}. {summary}"
-        
-        return summary
-        
+        summary = _call_gemini(prompt).strip()
+        if not summary.lower().startswith("cybergov"):
+            summary = f"CyberGov Bot voted {final_decision.upper()} because {summary}"
+        return summary.replace("\n", " ").strip()
     except Exception as e:
-        # Fallback to simple comment if Gemini fails
-        logger.warning(f"Gemini API failed, using fallback comment: {e}")
-        decision_reasoning = metadata.get("decision_reasoning", "")
-        return f"CyberGov Bot voted {final_decision.upper()} using {strategy} strategy. {decision_reasoning}"
+        logger.error(f"Gemini comment error: {e}")
+        return f"CyberGov Bot voted {final_decision.upper()} because the analysis supported this outcome."
 
 
-def generate_comment(vote_data: Dict[str, Any], proposal_doc: Dict[str, Any]) -> str:
-    agent_reasons = extract_agent_reasons(proposal_doc)    """
-    Extract agent rationales from Firestore proposal document.
-    
-    Args:
-        proposal_doc: Full Firestore proposal document
-    
-    Returns:
-        Dict with agent names as keys and list of rationale strings as values
-        Format: {"caspar": ["rationale"], "melchior": ["rationale"], "balthazar": ["rationale"]}
+# -------------------------------------------------------------
+# 3B. Long technical comment (optional)
+# -------------------------------------------------------------
+def _generate_comment_long(final_decision: str, strategy: str, agent_reasons: Dict[str, List[str]]) -> str:
+    def fmt(agent):
+        rs = agent_reasons.get(agent, [])
+        return "\n".join(f"- {x}" for x in rs) if rs else "No rationale provided."
+
+    return f"""
+### CyberGov Bot — Final Vote Explanation
+
+**Decision:** {final_decision}  
+**Strategy Applied:** {strategy}
+
+---
+
+### Balthazar (Strategic)
+{fmt("balthazar")}
+
+### Melchior (Growth)
+{fmt("melchior")}
+
+### Caspar (Risk)
+{fmt("caspar")}
+""".strip()
+
+
+# -------------------------------------------------------------
+# 3C. Unified entrypoint
+# -------------------------------------------------------------
+def generate_comment(
+    vote_data: Dict[str, Any],
+    agent_reasons: Dict[str, List[str]],
+    mode: str = "short",
+) -> str:
     """
-    
-    reasons = {
-        "caspar": [],
-        "melchior": [],
-        "balthazar": []
-    }
-    
-    # Access files.outputs which contains the agent JSONs
-    files = proposal_doc.get("files", {})
-    outputs = files.get("outputs", {})
-    
-    for agent_name in ["caspar", "melchior", "balthazar"]:
-        agent_data = outputs.get(agent_name, {})
-        
-        # Parse JSON content if it's a string (which it is in our schema)
-        content = agent_data.get("content", {})
-        if isinstance(content, str):
-            import json
-            try:
-                content = json.loads(content)
-            except:
-                content = {}
-        
-        rationale = content.get("rationale", "")
-        if rationale:
-            reasons[agent_name] = [rationale]
-    
-    return reasons
+    Main entrypoint used by batch_vote.py.
+    """
+    final_decision = vote_data.get("final_decision", "Abstain")
+    strategy = vote_data.get("weighted_decision_metadata", {}).get(
+        "strategy_used", "neutral"
+    )
+
+    if mode == "long":
+        return _generate_comment_long(final_decision, strategy, agent_reasons)
+
+    return _generate_comment_short(final_decision, agent_reasons)
 
 
+# -------------------------------------------------------------
+# 4. DelegateX payload builder
+# -------------------------------------------------------------
 def format_delegatex_payload(
     user_id: str,
     proposal_id: str,
     vote_data: Dict[str, Any],
     agent_reasons: Dict[str, list],
-    comment: str
+    comment: str,
 ) -> Dict[str, Any]:
-    """
-    Format the complete payload for DelegateX API.
-    """
-    
-    # Map decision to number: 0=NAY, 1=AYE, 2=ABSTAIN
+
+    decision_map = {"Nay": 0, "Aye": 1, "Abstain": 2}
     final_decision = vote_data.get("final_decision", "Abstain")
-    decision_map = {
-        "Nay": 0,
-        "Aye": 1,
-        "Abstain": 2
+
+    return {
+        "userId": user_id,         # DelegateX user ID (NOT Firestore)
+        "proposalId": proposal_id,
+        "decision": decision_map.get(final_decision, 2),
+        "reason": {
+            "balthazar": agent_reasons.get("balthazar", []),
+            "melchior": agent_reasons.get("melchior", []),
+            "caspar": agent_reasons.get("caspar", []),
+        },
+        "comment": comment,
     }
-    decision_number = decision_map.get(final_decision, 2)
-    
-    payload = {
-        "user_id": user_id,
-        "proposal_id": proposal_id,
-        "decision": decision_number,
-        "reason": agent_reasons,
-        "comment": comment
-    }
-    
-    return payload

@@ -205,55 +205,74 @@ class FirestoreHelper:
         })
         
         # Store full vote details in subcollection
+        vote_ref = doc_ref.collection('votes').document(str(vote_number))
         vote_ref.set({
             **vote_data,
             'savedAt': firestore.SERVER_TIMESTAMP
         })
 
-    def create_user(self, user_id: str, strategy_id: str = "neutral", 
-                   wallet_address: str = None, **kwargs):
+    def create_user(
+        self,
+        delegatex_user_id: int,
+        strategy_id: str = "neutral",
+        signature_link: str = None,
+        contact_link: str = None,
+        wallet_address: str = None,
+        preferences: Dict[str, Any] = None,
+    ):
         """
-        Create or update a user profile in the 'users' collection.
+        Creates OR updates a DelegateX user.
+        Stored at: users/<delegatexUserId>
         """
-        user_ref = self.db.collection('users').document(user_id)
-        
+        user_ref = self.db.collection("users").document(str(delegatex_user_id))
+
         user_data = {
-            'userId': user_id,
-            'strategyId': strategy_id,
-            'createdAt': firestore.SERVER_TIMESTAMP,
-            'updatedAt': firestore.SERVER_TIMESTAMP,
-            'walletAddress': wallet_address,
-            **kwargs
+            "delegatexUserId": delegatex_user_id,
+            "strategyId": strategy_id,
+            "signature_link": signature_link,
+            "contact_link": contact_link,
+            "walletAddress": wallet_address,
+            "preferences": preferences or {},
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": firestore.SERVER_TIMESTAMP,
         }
-        
-        # Use set with merge=True to avoid overwriting existing fields if user exists
+
         user_ref.set(user_data, merge=True)
         return user_ref
 
-    def save_user_vote(self, user_id: str, proposal_id: str, 
-                  weighted_result: WeightedDecisionResult,
-                  proposal_data: Dict[str, Any],
-                  provenance: Dict[str, Any]):
+    def save_user_vote(
+        self,
+        user_id: str,
+        proposal_id: str,
+        weighted_result: WeightedDecisionResult,
+        proposal_data: Dict[str, Any],
+        provenance: Dict[str, Any],
+        comment: str,
+    ):
         """
         Saves a user's weighted vote to users/{user_id}/votes/{proposal_id}.
-        Uses the complex JSON structure requested.
+        Stores the full vote JSON (including comment) inside vote.content.
         """
-        user_ref = self.db.collection('users').document(user_id)
-        vote_ref = user_ref.collection('votes').document(str(proposal_id))
-        
-        # 1. Construct the Vote Content JSON (The complex inner part)
+        user_ref = self.db.collection("users").document(str(user_id))
+        vote_ref = user_ref.collection("votes").document(str(proposal_id))
+
+        # 1. Construct the inner vote content JSON (complex part)
         vote_content = {
             "timestamp_utc": datetime.utcnow().isoformat(),
             "is_conclusive": True,
             "final_decision": weighted_result.final_decision,
-            "is_unanimous": False,  # You can calculate this if needed
+            "is_unanimous": False,  # could be calculated if needed
             "summary_rationale": weighted_result.decision_reasoning,
             "votes_breakdown": [
-                {"model": v["agent"], "decision": v["vote"], "confidence": None} 
+                {
+                    "model": v["agent"],
+                    "decision": v["vote"],
+                    "confidence": None,
+                }
                 for v in weighted_result.agent_votes
             ],
             "weighted_decision_metadata": {
-                "engine_version": "WeightedGovernanceDecisionEngine_v1",
+                "engine_version": weighted_result.engine_version,
                 "strategy_used": weighted_result.template_used,
                 "template_weights": weighted_result.template_weights,
                 "weighted_scores": weighted_result.weighted_scores,
@@ -261,44 +280,45 @@ class FirestoreHelper:
                 "confidence": weighted_result.confidence,
                 "rules_triggered": weighted_result.rules_triggered,
                 "decision_reasoning": weighted_result.decision_reasoning,
-                "agent_votes_with_weights": weighted_result.agent_votes
-            }
+                "agent_votes_with_weights": weighted_result.agent_votes,
+            },
+            # ✅ Include the human-facing comment INSIDE the vote payload
+            "comment": comment,
         }
 
-        # 2. Construct the Full Vote Document
+        # 2. Construct the full Firestore vote document
         vote_data = {
             # User reference
-            "user_id": user_id,
+            "delegatexUserId": int(user_id),
             "proposal_id": str(proposal_id),
             "voted_at": firestore.SERVER_TIMESTAMP,
             "strategy_used": weighted_result.template_used,
-            
-            # The actual vote decision (user-specific)
+            # Actual vote blob
             "vote": {
-                "content": json.dumps(vote_content),  # Store as JSON string
-                "hash": "PENDING_CALCULATION",  # You can implement hash calculation if needed
-                "timestamp_utc": datetime.utcnow().isoformat()
+                "content": json.dumps(vote_content),
+                "hash": "PENDING_CALCULATION",
+                "timestamp_utc": datetime.utcnow().isoformat(),
             },
-            
             # Audit trail
             "provenance": {
                 "github_run_id": provenance.get("github_run_id"),
                 "script": provenance.get("script"),
                 "model_name": provenance.get("model_name", "gov-bot-v1"),
-                "timestamp": provenance.get("timestamp", datetime.utcnow().isoformat())
+                "timestamp": provenance.get(
+                    "timestamp",
+                    datetime.utcnow().isoformat(),
+                ),
             },
-            
-            # Snapshot for fast UI loading (extracted from proposal)
+            # Snapshot for fast UI loading
             "proposal_snapshot": {
                 "title": proposal_data.get("title", "Unknown"),
-                "requested_amount": proposal_data.get("requestedAmount") or 
-                                proposal_data.get("onChainInfo", {}).get("usdAmount", "0"),
+                "requested_amount": proposal_data.get("requestedAmount")
+                or proposal_data.get("onChainInfo", {}).get("usdAmount", "0"),
                 "track_number": str(proposal_data.get("trackNumber", "0")),
                 "network": proposal_data.get("network", "polkadot"),
-                # Optionally add more fields that your UI needs
                 "proposer": proposal_data.get("onChainInfo", {}).get("proposer"),
-                "status": proposal_data.get("onChainInfo", {}).get("status")
-            }
+                "status": proposal_data.get("onChainInfo", {}).get("status"),
+            },
         }
 
         vote_ref.set(vote_data)
