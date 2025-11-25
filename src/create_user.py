@@ -3,7 +3,7 @@ import json
 
 helper = FirestoreHelper()
 
-delegatex_user_id = 23941  # Sample real user
+delegatex_user_id = 7705  # Sample real user
 proposal_id = "polkadot-1797"
 
 # 1. Create the user
